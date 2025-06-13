@@ -6,8 +6,6 @@ import lombok.extern.log4j.Log4j;
 
 import java.util.concurrent.atomic.AtomicInteger;
 
-import static org.akshya.helper.Constants.PLAYER_1;
-
 /**
  * The {@code Player} class represents an entity that can communicate with another {@code Player} instance
  * in a conversational manner. It demonstrates concurrent message exchange, where each player sends and
@@ -32,51 +30,58 @@ public class Player implements Runnable {
     private final AtomicInteger messageCount = new AtomicInteger(0);
     private volatile boolean isInitiator;
     private volatile boolean stop = false;
+    private final MessageQueue queue = new MessageQueue();
 
-    public Player(String name, Player otherPlayer, boolean isInitiator) {
+    public Player(String name, boolean isInitiator) {
         this.name = name;
-        this.otherPlayer = otherPlayer;
         this.isInitiator = isInitiator;
     }
 
     public void stop() {
         this.stop = true;
+        synchronized (queue) {
+            queue.notifyAll();
+        }
     }
 
     @Override
     public void run() {
-        while (!stop) {
+        try {
             if (isInitiator) {
                 String message = "Msg " + messageCount.incrementAndGet();
-                sendMessage(message);
+                log.info(name + " sent: " + message);
+                otherPlayer.enqueueMessage(message);
                 isInitiator = false;
             }
+
+            while (!stop) {
+                String received = queue.take();
+                if (received == null) continue;
+
+                String newMessage;
+                if (name.equals("Player1")) {
+                    newMessage = received + " | Msg " + messageCount.incrementAndGet();
+                    log.info(name + " sent: " + newMessage);
+                } else {
+                    newMessage = received + " | Reply " + messageCount.incrementAndGet();
+                    log.info(name + " replied: " + newMessage);
+                }
+
+                if (messageCount.get() == 10) {
+                    stop = true;
+                    if (otherPlayer != null) otherPlayer.stop();
+                    break;
+                }
+                otherPlayer.enqueueMessage(newMessage);
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            log.error(name + " interrupted.", e);
         }
     }
 
-    public synchronized void receiveMessage(String message) {
-        if (stop) return;
-        String newMessage;
-        if (name.equals(PLAYER_1)) {
-            newMessage = message + " | Msg " + (messageCount.incrementAndGet());
-            log.info(name + " sent: " + newMessage);
-        } else {
-            newMessage = message + " | Reply " + (messageCount.incrementAndGet());
-            log.info(name + " replied: " + newMessage);
-        }
-
-        if (messageCount.get() == 10) {
-            stop = true;
-            if (otherPlayer != null) otherPlayer.stop();
-            return;
-        }
-
-        otherPlayer.receiveMessage(newMessage);
-    }
-
-    public synchronized void sendMessage(String message) {
-        log.info(name + " sent: " + message);
-        otherPlayer.receiveMessage(message);
+    public void enqueueMessage(String message) throws InterruptedException {
+        queue.put(message);
     }
 }
 

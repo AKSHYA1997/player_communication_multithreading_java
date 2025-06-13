@@ -1,42 +1,52 @@
 package org.akshya.singleProcess;
 
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-import static org.mockito.Mockito.*;
+import static org.junit.jupiter.api.Assertions.*;
 
-public class PlayerTest {
+class PlayerTest {
 
-    private Player player1;
-    private Player player2;
+    @Test
+    void testPlayersExchangeTenMessagesAndStop() throws InterruptedException {
+        Player player1 = new Player("Player1", true);
+        Player player2 = new Player("Player2", false);
 
-    @BeforeEach
-    void setup() {
-        player2 = mock(Player.class);
-        player1 = new Player("Player 1", player2, true);
+        player1.setOtherPlayer(player2);
+        player2.setOtherPlayer(player1);
+
+        Thread t1 = new Thread(player1);
+        Thread t2 = new Thread(player2);
+
+        t1.start();
+        t2.start();
+
+        t1.join(5000);
+        t2.join(5000);
+
+        assertEquals(19, player1.getMessageCount().get() + player2.getMessageCount().get(),
+                "Total messages exchanged should be 19");
+        assertTrue(player1.isStop(), "Player1 should have stopped");
+        assertTrue(player2.isStop(), "Player2 should have stopped");
     }
 
     @Test
-    void testSendMessage() {
-        player1.sendMessage("Test Message");
-        verify(player2, times(1)).receiveMessage("Test Message");
+    void testStopTerminatesPlayerImmediately() throws InterruptedException {
+        Player player = new Player("TestPlayer", false);
+        player.stop();
+
+        Thread thread = new Thread(player);
+        thread.start();
+        thread.join(1000);
+
+        assertTrue(player.isStop(), "Player should remain stopped");
+        assertEquals(0, player.getMessageCount().get(), "No messages should be processed");
     }
 
     @Test
-    void testReceiveMessageAndStop() {
-        player1.receiveMessage("Msg 1");
+    void testEnqueueMessageDoesNotThrow() {
+        Player player = new Player("EnqueueTester", false);
 
-        verify(player2, times(1)).receiveMessage(contains("Msg 1 | Msg 1"));
-
-        for (int i = 2; i <= 10; i++) {
-            player1.receiveMessage("Msg " + i);
-        }
-        assert player1.getMessageCount().get() == 10;
-    }
-
-    @Test
-    void testStop() {
-        player1.stop();
-        assert player1.isStop();
+        assertDoesNotThrow(() -> player.enqueueMessage("TestMessage"),
+                "Enqueue should not throw exception");
     }
 }
